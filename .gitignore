@@ -5,9 +5,14 @@
 
 # Wails
 app/build/bin/
-app/build/windows/
+app/build/darwin/*.app/
 app/frontend/dist/
 app/frontend/wailsjs/
+
+# app/build/windows/ is intentionally tracked: it holds project-owned
+# source customizations (manifest, NSIS installer script, icon), not
+# build output. Only the generated .syso lives there transiently.
+app/build/windows/*.syso
 
 # Node
 app/frontend/node_modules/
