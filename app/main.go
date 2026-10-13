@@ -17,9 +17,9 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "VProtocol",
-		Width:  1040,
-		Height: 700,
+		Title:     "VProtocol",
+		Width:     1040,
+		Height:    700,
 		MinWidth:  880,
 		MinHeight: 600,
 		AssetServer: &assetserver.Options{

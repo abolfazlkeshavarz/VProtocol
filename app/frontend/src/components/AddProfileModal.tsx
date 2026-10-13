@@ -17,6 +17,7 @@ export default function AddProfileModal({ open, onClose, onSubmit }: Props) {
   const [authMethod, setAuthMethod] = useState<"password" | "privateKey">("password");
   const [password, setPassword] = useState("");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
+  const [mode, setMode] = useState<"netstack" | "permitTunnel">("netstack");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -28,6 +29,7 @@ export default function AddProfileModal({ open, onClose, onSubmit }: Props) {
     setAuthMethod("password");
     setPassword("");
     setPrivateKeyPath("");
+    setMode("netstack");
     setErr(null);
   }
 
@@ -48,6 +50,7 @@ export default function AddProfileModal({ open, onClose, onSubmit }: Props) {
         password,
         privateKeyPath,
         splitTunnel: [],
+        mode,
       } as main.ProfileInput);
       reset();
     } catch (e: any) {
@@ -110,6 +113,25 @@ export default function AddProfileModal({ open, onClose, onSubmit }: Props) {
                   placeholder="C:\Users\you\.ssh\id_ed25519"
                 />
               )}
+
+              <label className="flex flex-col gap-1.5 mt-1">
+                <span className="text-[11px] font-medium text-white/40 uppercase tracking-wide">
+                  Tunnel mode
+                </span>
+                <div className="flex gap-1.5 bg-white/5 rounded-lg p-1">
+                  <TabButton active={mode === "netstack"} onClick={() => setMode("netstack")}>
+                    Compatible
+                  </TabButton>
+                  <TabButton active={mode === "permitTunnel"} onClick={() => setMode("permitTunnel")}>
+                    Fast (PermitTunnel)
+                  </TabButton>
+                </div>
+                <p className="text-[11px] text-white/35 leading-snug">
+                  {mode === "netstack"
+                    ? "Works with any standard SSH server — no server config needed."
+                    : "Faster, but requires \"PermitTunnel yes\" in the server's sshd_config."}
+                </p>
+              </label>
 
               {err && <p className="text-xs text-red-400 mt-1">{err}</p>}
 

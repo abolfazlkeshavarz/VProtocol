@@ -12,13 +12,22 @@ import (
 
 // Profile is one saved SSH VPN server connection.
 type Profile struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	User string `json:"user"`
 
 	AuthMethod string `json:"authMethod"` // "password" | "privateKey"
+
+	// Mode selects how the tunnel is driven:
+	//   "netstack"     - (default) per-connection forwarding over plain SSH
+	//                     direct-tcpip channels via a userspace TCP/IP stack.
+	//                     Works with any default-configured SSH server.
+	//   "permitTunnel" - whole-interface tun@openssh.com forwarding. Faster,
+	//                     but requires `PermitTunnel yes` in the server's
+	//                     sshd_config (and usually root there).
+	Mode string `json:"mode,omitempty"`
 	// Password is stored only if the user opts in; prefer PrivateKeyPath.
 	Password       string `json:"password,omitempty"`
 	PrivateKeyPath string `json:"privateKeyPath,omitempty"`

@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/crypto/ssh"
 
 	"vprotocol/internal/config"
+	"vprotocol/internal/netstackvpn"
 	"vprotocol/internal/router"
 	"vprotocol/internal/sshtunnel"
 	"vprotocol/internal/tunnel"
@@ -30,11 +32,12 @@ type App struct {
 	ctx   context.Context
 	store *config.Store
 
-	mu       sync.Mutex
-	active   *sshtunnel.Tunnel
-	dev      *tunnel.Device
-	cancel   func()
-	state    ConnectionState
+	mu        sync.Mutex
+	sshClient *ssh.Client            // set when connected, regardless of mode
+	fullTun   *sshtunnel.Tunnel      // set only in "permitTunnel" mode
+	fwd       *netstackvpn.Forwarder // set only in "netstack" mode
+	dev       *tunnel.Device
+	state     ConnectionState
 }
 
 func NewApp() *App {
@@ -73,6 +76,7 @@ type ProfileInput struct {
 	Password       string   `json:"password"`
 	PrivateKeyPath string   `json:"privateKeyPath"`
 	SplitTunnel    []string `json:"splitTunnel"`
+	Mode           string   `json:"mode"` // "netstack" (default) | "permitTunnel"
 }
 
 // AddProfile saves a new server profile and returns it (with its assigned ID).
@@ -89,6 +93,7 @@ func (a *App) AddProfile(in ProfileInput) (config.Profile, error) {
 		Password:       in.Password,
 		PrivateKeyPath: in.PrivateKeyPath,
 		SplitTunnel:    in.SplitTunnel,
+		Mode:           orDefaultStr(in.Mode, "netstack"),
 	}
 	saved := a.store.Add(p)
 	if err := a.store.Save(); err != nil {
@@ -116,14 +121,23 @@ func (a *App) GetState() ConnectionState {
 // This requires administrator/root privileges to create the TUN interface
 // and modify routes — the OS will prompt accordingly if not already
 // elevated.
+//
+// By default ("netstack" mode) this works against any ordinary SSH server:
+// it dials a plain SSH connection and forwards each individual TCP
+// connection over it as a standard direct-tcpip channel (the same mechanism
+// `ssh -L`/`-D` use), which needs no special sshd configuration. If the
+// profile explicitly opts into "permitTunnel" mode, it instead uses the
+// faster whole-interface tun@openssh.com channel, which requires the
+// server to have `PermitTunnel yes` set.
 func (a *App) Connect(profileID string) error {
 	profile, ok := a.store.Find(profileID)
 	if !ok {
 		return fmt.Errorf("profile not found: %s", profileID)
 	}
+	mode := orDefaultStr(profile.Mode, "netstack")
 
 	a.mu.Lock()
-	if a.active != nil {
+	if a.sshClient != nil {
 		a.mu.Unlock()
 		return fmt.Errorf("already connected; disconnect first")
 	}
@@ -152,6 +166,85 @@ func (a *App) Connect(profileID string) error {
 		sshCfg.Password = profile.Password
 	}
 
+	if mode == "permitTunnel" {
+		return a.connectPermitTunnel(profileID, profile, sshCfg)
+	}
+	return a.connectNetstack(profileID, profile, sshCfg)
+}
+
+// connectNetstack is the default, universally-compatible path: plain SSH
+// connection, per-connection direct-tcpip forwarding via a userspace
+// TCP/IP stack sitting on top of the real TUN device.
+func (a *App) connectNetstack(profileID string, profile config.Profile, sshCfg sshtunnel.Config) error {
+	client, err := sshtunnel.DialClient(sshCfg)
+	if err != nil {
+		a.setState(ConnectionState{Status: "error", ProfileID: profileID, Message: err.Error()})
+		return err
+	}
+
+	a.setState(ConnectionState{Status: "connecting", ProfileID: profileID, Message: "creating network interface..."})
+
+	dev, err := tunnel.Open(tunnel.DefaultConfig())
+	if err != nil {
+		client.Close()
+		a.setState(ConnectionState{Status: "error", ProfileID: profileID, Message: err.Error()})
+		return err
+	}
+
+	if err := router.Apply(dev.Name(), profile.SplitTunnel); err != nil {
+		dev.Close()
+		client.Close()
+		a.setState(ConnectionState{Status: "error", ProfileID: profileID, Message: err.Error()})
+		return err
+	}
+
+	fwd, err := netstackvpn.New(dev, client)
+	if err != nil {
+		_ = router.Clear(dev.Name(), profile.SplitTunnel)
+		dev.Close()
+		client.Close()
+		a.setState(ConnectionState{Status: "error", ProfileID: profileID, Message: err.Error()})
+		return err
+	}
+	fwd.Logf = func(format string, args ...any) {
+		runtime.LogDebugf(a.ctx, format, args...)
+	}
+
+	a.mu.Lock()
+	a.sshClient = client
+	a.fwd = fwd
+	a.dev = dev
+	a.mu.Unlock()
+
+	a.store.Touch(profileID)
+	_ = a.store.Save()
+
+	a.setState(ConnectionState{
+		Status:    "connected",
+		ProfileID: profileID,
+		Message:   fmt.Sprintf("connected via %s (compatible mode)", dev.Name()),
+		Since:     time.Now().UnixMilli(),
+	})
+
+	go func() {
+		fwd.Run() // blocks until Close()
+		a.mu.Lock()
+		a.sshClient = nil
+		a.fwd = nil
+		a.dev = nil
+		a.mu.Unlock()
+		_ = router.Clear(dev.Name(), profile.SplitTunnel)
+		dev.Close()
+		client.Close()
+		a.setState(ConnectionState{Status: "disconnected"})
+	}()
+
+	return nil
+}
+
+// connectPermitTunnel is the opt-in fast path for servers configured with
+// `PermitTunnel yes`.
+func (a *App) connectPermitTunnel(profileID string, profile config.Profile, sshCfg sshtunnel.Config) error {
 	t, err := sshtunnel.Dial(sshCfg)
 	if err != nil {
 		a.setState(ConnectionState{Status: "error", ProfileID: profileID, Message: err.Error()})
@@ -160,8 +253,7 @@ func (a *App) Connect(profileID string) error {
 
 	a.setState(ConnectionState{Status: "connecting", ProfileID: profileID, Message: "creating network interface..."})
 
-	devCfg := tunnel.DefaultConfig()
-	dev, err := tunnel.Open(devCfg)
+	dev, err := tunnel.Open(tunnel.DefaultConfig())
 	if err != nil {
 		t.Close()
 		a.setState(ConnectionState{Status: "error", ProfileID: profileID, Message: err.Error()})
@@ -176,7 +268,7 @@ func (a *App) Connect(profileID string) error {
 	}
 
 	a.mu.Lock()
-	a.active = t
+	a.fullTun = t
 	a.dev = dev
 	a.mu.Unlock()
 
@@ -186,14 +278,14 @@ func (a *App) Connect(profileID string) error {
 	a.setState(ConnectionState{
 		Status:    "connected",
 		ProfileID: profileID,
-		Message:   fmt.Sprintf("connected via %s", dev.Name()),
+		Message:   fmt.Sprintf("connected via %s (PermitTunnel mode)", dev.Name()),
 		Since:     time.Now().UnixMilli(),
 	})
 
 	go func() {
 		err := t.Run(dev)
 		a.mu.Lock()
-		a.active = nil
+		a.fullTun = nil
 		a.dev = nil
 		a.mu.Unlock()
 		_ = router.Clear(dev.Name(), profile.SplitTunnel)
@@ -209,17 +301,23 @@ func (a *App) Connect(profileID string) error {
 	return nil
 }
 
-// Disconnect tears down the active tunnel, if any.
+// Disconnect tears down the active tunnel, if any, in whichever mode it's
+// running.
 func (a *App) Disconnect() error {
 	a.mu.Lock()
-	t := a.active
+	fwd := a.fwd
+	full := a.fullTun
 	a.mu.Unlock()
 
-	if t == nil {
-		a.setState(ConnectionState{Status: "disconnected"})
+	if fwd != nil {
+		fwd.Close()
 		return nil
 	}
-	return t.Close()
+	if full != nil {
+		return full.Close()
+	}
+	a.setState(ConnectionState{Status: "disconnected"})
+	return nil
 }
 
 func (a *App) setState(s ConnectionState) {

@@ -72,9 +72,13 @@ type Tunnel struct {
 	errCh   chan error
 }
 
-// Dial connects to the SSH server and opens the tun forwarding channel.
-// It does not start pumping packets; call Run for that.
-func Dial(cfg Config) (*Tunnel, error) {
+// DialClient establishes just the SSH connection (auth + host key check),
+// without opening any tunnel channel. Use this when driving the connection
+// via the netstackvpn forwarder (plain direct-tcpip per connection, works
+// with any default-configured SSH server). Use Dial instead when the
+// server has PermitTunnel enabled and you want the faster whole-interface
+// tun@openssh.com path.
+func DialClient(cfg Config) (*ssh.Client, error) {
 	authMethods, err := buildAuthMethods(cfg)
 	if err != nil {
 		return nil, err
@@ -96,6 +100,17 @@ func Dial(cfg Config) (*Tunnel, error) {
 	client, err := ssh.Dial("tcp", addr, clientCfg)
 	if err != nil {
 		return nil, fmt.Errorf("sshtunnel: dial %s: %w", addr, err)
+	}
+	return client, nil
+}
+
+// Dial connects to the SSH server and opens the tun@openssh.com forwarding
+// channel (requires the server to have `PermitTunnel yes`). It does not
+// start pumping packets; call Run for that.
+func Dial(cfg Config) (*Tunnel, error) {
+	client, err := DialClient(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	payload := make([]byte, 8)
