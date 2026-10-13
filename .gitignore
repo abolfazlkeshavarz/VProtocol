@@ -25,3 +25,6 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Local tooling state - never commit
+.claude/
