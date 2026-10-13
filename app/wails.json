@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "VProtocol",
+  "outputfilename": "vprotocol",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Abolfazl Keshavarz",
+    "email": "abolfazlkeshavarz1112@gmail.com"
+  }
+}

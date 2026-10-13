@@ -1,0 +1,22 @@
+# Go
+/build/
+*.exe
+*.test
+
+# Wails
+app/build/bin/
+app/build/windows/
+app/frontend/dist/
+app/frontend/wailsjs/
+
+# Node
+app/frontend/node_modules/
+app/frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
