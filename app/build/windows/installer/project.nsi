@@ -96,6 +96,10 @@ Section
 
     !insertmacro wails.files
 
+    # VProtocol's TUN device code loads wintun.dll at runtime; it isn't
+    # something wails.files knows to bundle, so it's added explicitly here.
+    File "/oname=wintun.dll" "..\..\..\resources\windows\wintun\${ARCH}\wintun.dll"
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 

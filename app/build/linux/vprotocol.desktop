@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=VProtocol
+Comment=SSH VPN client
+Exec=/usr/bin/vprotocol
+Icon=vprotocol
+Terminal=false
+Categories=Network;Security;
+StartupWMClass=vprotocol

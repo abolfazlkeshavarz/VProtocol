@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Plus, Server, ShieldCheck, Trash2, X } from "lucide-react";
+import { Plus, Server, Trash2, X } from "lucide-react";
+import logo from "./assets/images/logo.png";
 import {
   AddProfile,
   Connect,
@@ -85,10 +86,8 @@ function App() {
     <div className="h-full w-full bg-surface flex overflow-hidden">
       {/* Sidebar */}
       <aside className="w-72 shrink-0 border-r border-surface-border bg-surface-raised flex flex-col">
-        <div className="flex items-center gap-2 px-5 py-5">
-          <div className="h-8 w-8 rounded-lg bg-brand-500/20 flex items-center justify-center">
-            <ShieldCheck className="h-4.5 w-4.5 text-brand-400" size={18} />
-          </div>
+        <div className="flex items-center gap-2.5 px-5 py-5">
+          <img src={logo} alt="" className="h-8 w-8 rounded-lg" />
           <span className="font-semibold text-[15px] tracking-tight text-white/90">
             VProtocol
           </span>

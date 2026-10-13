@@ -1,0 +1,30 @@
+# Packaging config for nfpm (https://nfpm.goreleaser.com), used in CI to
+# build .deb and .rpm packages from the compiled Linux binary.
+# VERSION and ARCH are set as env vars by the release workflow.
+name: vprotocol
+arch: "${ARCH}"
+platform: linux
+version: "${VERSION}"
+section: net
+priority: optional
+maintainer: "Abolfazl Keshavarz <abolfazlkeshavarz1112@gmail.com>"
+description: |
+  Cross-platform SSH VPN client with a modern desktop UI.
+  Tunnels traffic over a plain SSH connection (no special server
+  config required) or, optionally, OpenSSH's tun@openssh.com channel.
+homepage: "https://github.com/abolfazlkeshavarz/VProtocol"
+license: MIT
+
+contents:
+  - src: ../bin/vprotocol
+    dst: /usr/bin/vprotocol
+    file_info:
+      mode: 0755
+  - src: vprotocol.desktop
+    dst: /usr/share/applications/vprotocol.desktop
+  - src: vprotocol.png
+    dst: /usr/share/icons/hicolor/512x512/apps/vprotocol.png
+
+depends:
+  - libwebkit2gtk-4.1-0
+  - libgtk-3-0
