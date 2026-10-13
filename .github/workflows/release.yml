@@ -47,8 +47,16 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Install NSIS
-        run: choco install nsis -y
         shell: pwsh
+        run: |
+          choco install nsis -y
+          # A fresh choco install updates the machine PATH, but that
+          # doesn't propagate to the current job's later steps (each step
+          # is a new process) — windows-11-arm ships NSIS preinstalled so
+          # this was masked there, but windows-latest needs it explicit.
+          $nsisDir = "C:\Program Files (x86)\NSIS"
+          if (-not (Test-Path $nsisDir)) { $nsisDir = "C:\Program Files\NSIS" }
+          Add-Content -Path $env:GITHUB_PATH -Value $nsisDir
 
       - name: Build installer
         working-directory: app
@@ -57,9 +65,15 @@ jobs:
         # wintun.dll from app/resources/windows/wintun/${{ matrix.arch }}/
         # into the installer itself, so installed users get it automatically.
 
-      - name: Also stage a portable (non-installer) copy
+      - name: Stage a portable (non-installer) copy
         shell: pwsh
-        run: Copy-Item "app/resources/windows/wintun/${{ matrix.arch }}/wintun.dll" "app/build/bin/wintun.dll"
+        run: |
+          Copy-Item "app/resources/windows/wintun/${{ matrix.arch }}/wintun.dll" "app/build/bin/wintun.dll"
+          # The release job merges all OS/arch artifacts into one flat
+          # directory, so filenames must be arch-qualified here or the
+          # amd64 and arm64 portable exe/dll silently overwrite each other.
+          Rename-Item "app/build/bin/vprotocol.exe" "vprotocol-windows-${{ matrix.arch }}.exe"
+          Rename-Item "app/build/bin/wintun.dll" "wintun-${{ matrix.arch }}.dll"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -124,6 +138,13 @@ jobs:
           nfpm pkg --config nfpm.yaml --packager deb --target ../bin/vprotocol_${VERSION}_${ARCH}.deb
           nfpm pkg --config nfpm.yaml --packager rpm --target ../bin/vprotocol_${VERSION}_${ARCH}.rpm
 
+      - name: Rename raw binary to avoid cross-arch collision
+        working-directory: app/build/bin
+        # The release job merges all OS/arch artifacts into one flat
+        # directory, so this must be arch-qualified or the amd64 and
+        # arm64 raw binaries silently overwrite each other.
+        run: mv vprotocol vprotocol-linux-${{ matrix.arch }}
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -131,7 +152,7 @@ jobs:
           path: |
             app/build/bin/*.deb
             app/build/bin/*.rpm
-            app/build/bin/vprotocol
+            app/build/bin/vprotocol-linux-${{ matrix.arch }}
 
   release:
     needs: [build-windows, build-linux]
