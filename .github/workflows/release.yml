@@ -23,9 +23,15 @@ jobs:
         include:
           - os: windows-latest
             arch: amd64
+            experimental: false
           - os: windows-11-arm
             arch: arm64
+            # windows-11-arm is a newer GitHub-hosted runner image; if it's
+            # ever unavailable this leg fails without blocking the release
+            # of the amd64 build.
+            experimental: true
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,9 +76,14 @@ jobs:
         include:
           - os: ubuntu-latest
             arch: amd64
+            experimental: false
           - os: ubuntu-24.04-arm
             arch: arm64
+            # Same reasoning as windows-11-arm above: don't let an
+            # unavailable/flaky arm64 runner block the amd64 release.
+            experimental: true
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
     steps:
       - uses: actions/checkout@v4
 
