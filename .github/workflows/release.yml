@@ -65,15 +65,22 @@ jobs:
         # wintun.dll from app/resources/windows/wintun/${{ matrix.arch }}/
         # into the installer itself, so installed users get it automatically.
 
-      - name: Stage a portable (non-installer) copy
+      - name: Package portable (non-installer) zip
         shell: pwsh
         run: |
-          Copy-Item "app/resources/windows/wintun/${{ matrix.arch }}/wintun.dll" "app/build/bin/wintun.dll"
-          # The release job merges all OS/arch artifacts into one flat
-          # directory, so filenames must be arch-qualified here or the
-          # amd64 and arm64 portable exe/dll silently overwrite each other.
-          Rename-Item "app/build/bin/vprotocol.exe" "vprotocol-windows-${{ matrix.arch }}.exe"
-          Rename-Item "app/build/bin/wintun.dll" "wintun-${{ matrix.arch }}.dll"
+          # wintun.dll must keep its real name (the TUN code loads it by
+          # that exact filename) to work when run portably, so it can't be
+          # arch-suffixed like the other artifacts — zip it alongside the
+          # exe instead, and arch-qualify the zip's name. This also avoids
+          # the release job's flat merge-multiple overwriting one arch's
+          # loose files with the other's.
+          New-Item -ItemType Directory -Path "app/build/bin/portable" | Out-Null
+          Move-Item "app/build/bin/vprotocol.exe" "app/build/bin/portable/vprotocol.exe"
+          Copy-Item "app/resources/windows/wintun/${{ matrix.arch }}/wintun.dll" "app/build/bin/portable/wintun.dll"
+          Compress-Archive -Path "app/build/bin/portable/*" -DestinationPath "app/build/bin/vprotocol-windows-${{ matrix.arch }}-portable.zip"
+          # Move (not Copy) above already removed the loose vprotocol.exe
+          # from app/build/bin, so only the installer matches *.exe below —
+          # no more amd64/arm64 collision when the release job merges both.
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -81,7 +88,7 @@ jobs:
           name: windows-${{ matrix.arch }}
           path: |
             app/build/bin/*.exe
-            app/build/bin/*.dll
+            app/build/bin/*.zip
 
   build-linux:
     strategy:

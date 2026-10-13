@@ -15,6 +15,9 @@ VProtocol tunnels your traffic over a plain SSH connection — no VPN protocol, 
 
 Prebuilt installers for Windows (`.exe` installer) and Linux (`.deb` / `.rpm`), for both amd64 and arm64, are published on the [Releases](../../releases) page.
 
+- **Windows:** use `VProtocol-<arch>-installer.exe` — it bundles everything needed. If you instead want the portable (no-install) version, download `vprotocol-windows-<arch>-portable.zip` and run `vprotocol.exe` from inside the extracted folder — it needs `wintun.dll` to stay next to it, so don't move just the exe out on its own.
+- **Linux:** install the `.deb` or `.rpm` matching your distro and arch. A raw `vprotocol-linux-<arch>` binary is also provided for other distros.
+
 ## Building from source
 
 Requirements: Go 1.26+, Node 22+, and the [Wails](https://wails.io) CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`).
