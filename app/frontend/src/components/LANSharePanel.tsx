@@ -51,8 +51,12 @@ export default function LANSharePanel({ state, onStart, onStop }: Props) {
         >
           <span
             className={[
-              "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
-              state.active ? "translate-x-[18px]" : "translate-x-0.5",
+              // left-0.5 is the explicit base (off) position — without it
+              // the browser falls back to this absolutely-positioned
+              // span's ambiguous "static position", which rendered the
+              // knob on the right even when off.
+              "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+              state.active ? "translate-x-4" : "translate-x-0",
             ].join(" ")}
           />
         </button>
