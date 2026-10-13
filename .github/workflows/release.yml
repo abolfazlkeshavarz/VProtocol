@@ -108,7 +108,11 @@ jobs:
 
       - name: Build
         working-directory: app
-        run: wails build -clean -platform linux/${{ matrix.arch }}
+        # webkit2gtk-4.0 isn't packaged on modern Ubuntu (24.04+) — only
+        # 4.1 is available (installed above) — so Wails needs the
+        # webkit2_41 build tag to link against it instead of its 4.0
+        # default (see pkg/assetserver/webview/webkit2_40+.go upstream).
+        run: wails build -clean -tags webkit2_41 -platform linux/${{ matrix.arch }}
 
       - name: Package .deb and .rpm
         working-directory: app/build/linux
