@@ -1,5 +1,6 @@
 import { Trash2, Wifi } from "lucide-react";
 import { config } from "../../wailsjs/go/models";
+import { protocolMeta } from "../protocols";
 
 interface Props {
   profiles: config.Profile[];
@@ -23,6 +24,11 @@ export default function ProfileList({
       {profiles.map((p) => {
         const isSelected = p.id === selectedId;
         const isActive = p.id === activeId;
+        const proto = protocolMeta(p.protocol || "ssh");
+        const subtitle =
+          proto.id === "ssh"
+            ? `${p.user}@${p.host}:${p.port}`
+            : `${p.host}:${p.port}`;
         return (
           <div
             key={p.id}
@@ -42,12 +48,17 @@ export default function ProfileList({
               <Wifi size={14} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-white/85 truncate">
-                {p.name || p.host}
-              </p>
-              <p className="text-[11px] text-white/35 truncate">
-                {p.user}@{p.host}:{p.port}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-medium text-white/85 truncate">
+                  {p.name || p.host}
+                </p>
+                <span
+                  className={`shrink-0 text-[9px] font-semibold tracking-wide px-1.5 py-[1px] rounded ${proto.colorClass} ${proto.bgClass}`}
+                >
+                  {proto.short}
+                </span>
+              </div>
+              <p className="text-[11px] text-white/35 truncate">{subtitle}</p>
             </div>
             {isActive && (
               <span className="h-1.5 w-1.5 rounded-full bg-brand-400 shrink-0" />

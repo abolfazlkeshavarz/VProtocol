@@ -6,15 +6,20 @@ import {
   AddProfile,
   Connect,
   Disconnect,
+  GetLANShareState,
   GetState,
   ListProfiles,
   RemoveProfile,
+  StartLANShare,
+  StopLANShare,
 } from "../wailsjs/go/main/App";
 import { config, main } from "../wailsjs/go/models";
 import { EventsOn } from "../wailsjs/runtime/runtime";
 import AddProfileModal from "./components/AddProfileModal";
+import LANSharePanel from "./components/LANSharePanel";
 import ProfileList from "./components/ProfileList";
 import StatusOrb from "./components/StatusOrb";
+import { protocolMeta } from "./protocols";
 
 export type Status = "disconnected" | "connecting" | "connected" | "error";
 
@@ -24,19 +29,29 @@ function App() {
   const [state, setState] = useState<main.ConnectionState>({
     status: "disconnected",
   } as main.ConnectionState);
+  const [lanState, setLanState] = useState<main.LANShareState>({
+    active: false,
+  } as main.LANShareState);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     refreshProfiles();
     GetState().then(setState).catch(() => {});
+    GetLANShareState().then(setLanState).catch(() => {});
 
-    const off = EventsOn("connection:state", (s: main.ConnectionState) => {
+    const offConn = EventsOn("connection:state", (s: main.ConnectionState) => {
       setState(s);
       if (s.status === "error") setError(s.message ?? "Unknown error");
       else setError(null);
     });
-    return () => off();
+    const offLan = EventsOn("lanshare:state", (s: main.LANShareState) => {
+      setLanState(s);
+    });
+    return () => {
+      offConn();
+      offLan();
+    };
   }, []);
 
   function refreshProfiles() {
@@ -81,6 +96,7 @@ function App() {
   const selected = profiles.find((p) => p.id === selectedId) ?? null;
   const isBusy = status === "connecting";
   const isConnected = status === "connected";
+  const proto = selected ? protocolMeta(selected.protocol || "ssh") : null;
 
   return (
     <div className="h-full w-full bg-surface flex overflow-hidden">
@@ -132,58 +148,85 @@ function App() {
       </aside>
 
       {/* Main panel */}
-      <main className="flex-1 flex flex-col items-center justify-center relative px-8">
-        <StatusOrb status={status} />
+      <main className="flex-1 flex flex-col items-center justify-center relative px-8 py-10 gap-8">
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <StatusOrb status={status} />
 
-        <div className="mt-8 text-center">
-          <h1 className="text-xl font-semibold text-white/90">
-            {status === "connected" && "Connected"}
-            {status === "connecting" && "Connecting…"}
-            {status === "disconnected" && "Not Connected"}
-            {status === "error" && "Connection Failed"}
-          </h1>
-          <p className="mt-1.5 text-sm text-white/40 max-w-sm">
-            {selected
-              ? selected.name || `${selected.user}@${selected.host}`
-              : "Select a server to connect"}
-          </p>
-          {state.message && status !== "error" && (
-            <p className="mt-1 text-xs text-white/30">{state.message}</p>
-          )}
+          <div className="mt-8 text-center">
+            <h1 className="text-xl font-semibold text-white/90">
+              {status === "connected" && "Connected"}
+              {status === "connecting" && "Connecting…"}
+              {status === "disconnected" && "Not Connected"}
+              {status === "error" && "Connection Failed"}
+            </h1>
+            <div className="mt-1.5 flex items-center justify-center gap-1.5">
+              <p className="text-sm text-white/40 max-w-sm">
+                {selected ? selected.name || selected.host : "Select a server to connect"}
+              </p>
+              {selected && proto && (
+                <span className={`text-[9px] font-semibold tracking-wide px-1.5 py-[1px] rounded ${proto.colorClass} ${proto.bgClass}`}>
+                  {proto.short}
+                </span>
+              )}
+            </div>
+            {state.message && status !== "error" && (
+              <p className="mt-1 text-xs text-white/30">{state.message}</p>
+            )}
+          </div>
+
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="mt-4 max-w-sm rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-sm text-red-300 flex items-start gap-2"
+              >
+                <span className="flex-1">{error}</span>
+                <button onClick={() => setError(null)} className="text-red-300/60 hover:text-red-300">
+                  <X size={14} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <button
+            disabled={!selected || isBusy}
+            onClick={isConnected ? handleDisconnect : handleConnect}
+            className={[
+              "mt-10 px-10 py-3 rounded-2xl font-semibold text-sm tracking-wide",
+              "transition-[transform,box-shadow,background-color] duration-150 ease-out",
+              "disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none",
+              isConnected
+                ? "bg-white/[0.06] text-white/80 border border-white/10 hover:bg-white/10 active:scale-[0.97]"
+                : [
+                    "text-white border border-brand-400/40",
+                    "bg-gradient-to-b from-brand-400 to-brand-600",
+                    "shadow-button hover:shadow-button-hover",
+                    "active:shadow-button-active active:scale-[0.97] active:from-brand-500 active:to-brand-700",
+                  ].join(" "),
+            ].join(" ")}
+          >
+            {isBusy ? "Connecting…" : isConnected ? "Disconnect" : "Connect"}
+          </button>
         </div>
 
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              className="mt-4 max-w-sm rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 text-sm text-red-300 flex items-start gap-2"
-            >
-              <span className="flex-1">{error}</span>
-              <button onClick={() => setError(null)} className="text-red-300/60 hover:text-red-300">
-                <X size={14} />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <button
-          disabled={!selected || isBusy}
-          onClick={isConnected ? handleDisconnect : handleConnect}
-          className={[
-            "mt-10 px-10 py-3 rounded-full font-semibold text-sm tracking-wide transition-all duration-200",
-            "disabled:opacity-30 disabled:cursor-not-allowed",
-            isConnected
-              ? "bg-white/5 text-white/80 border border-white/10 hover:bg-white/10"
-              : "bg-brand-500 text-surface shadow-glow hover:bg-brand-400 active:scale-[0.98]",
-          ].join(" ")}
-        >
-          {isBusy ? "Connecting…" : isConnected ? "Disconnect" : "Connect"}
-        </button>
+        {isConnected && (
+          <LANSharePanel
+            state={lanState}
+            onStart={async (port) => {
+              try {
+                await StartLANShare(port);
+              } catch (e: any) {
+                setLanState({ active: false, error: String(e) } as main.LANShareState);
+              }
+            }}
+            onStop={StopLANShare}
+          />
+        )}
 
         <p className="absolute bottom-6 text-[11px] text-white/25">
-          SSH tunnel · split or full-tunnel routing · all architectures
+          SSH · VLESS · VMess · Trojan · Shadowsocks · SOCKS5 — all architectures
         </p>
       </main>
 

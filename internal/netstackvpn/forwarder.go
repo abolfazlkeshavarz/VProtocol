@@ -23,7 +23,6 @@ import (
 	"net"
 	"strconv"
 
-	"golang.org/x/crypto/ssh"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -48,11 +47,19 @@ type Device interface {
 	MTU() int
 }
 
-// Forwarder bridges a real TUN device to an SSH connection: every
-// connection attempt seen on the TUN is re-established out over SSH.
+// Dialer is anything that can open an outbound connection on behalf of the
+// forwarder — an *ssh.Client (its Dial method opens a direct-tcpip
+// channel), a SOCKS5 dialer (internal/socks5dial), or anything else with
+// this shape.
+type Dialer interface {
+	Dial(network, addr string) (net.Conn, error)
+}
+
+// Forwarder bridges a real TUN device to an upstream connection: every
+// connection attempt seen on the TUN is re-established through dialer.
 type Forwarder struct {
 	dev    Device
-	client *ssh.Client
+	dialer Dialer
 
 	ep    *channel.Endpoint
 	stack *stack.Stack
@@ -67,12 +74,12 @@ type Forwarder struct {
 
 // New creates the userspace stack and wires it to dev, ready to run. It
 // does not start pumping packets yet; call Run for that.
-func New(dev Device, client *ssh.Client) (*Forwarder, error) {
+func New(dev Device, dialer Dialer) (*Forwarder, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	f := &Forwarder{
 		dev:    dev,
-		client: client,
+		dialer: dialer,
 		ctx:    ctx,
 		cancel: cancel,
 		Logf:   func(string, ...any) {},
@@ -158,7 +165,7 @@ func (f *Forwarder) deviceToStack() {
 func (f *Forwarder) stackToDevice() {
 	for {
 		pkt := f.ep.ReadContext(f.ctx)
-		if pkt.IsNil() {
+		if pkt == nil {
 			return // closed or ctx cancelled
 		}
 		view := pkt.ToView()
@@ -186,7 +193,7 @@ func (f *Forwarder) handleTCP(r *tcp.ForwarderRequest) {
 
 	local := gonet.NewTCPConn(&wq, ep)
 
-	remote, dialErr := f.client.Dial("tcp", dst)
+	remote, dialErr := f.dialer.Dial("tcp", dst)
 	if dialErr != nil {
 		f.Logf("netstackvpn: dial %s over SSH: %v", dst, dialErr)
 		local.Close()
@@ -200,21 +207,22 @@ func (f *Forwarder) handleTCP(r *tcp.ForwarderRequest) {
 // handleUDP only serves DNS (port 53): it resolves by opening a short-lived
 // TCP connection to the destination over SSH and speaking DNS-over-TCP,
 // since SSH has no UDP forwarding primitive. All other UDP is dropped.
-func (f *Forwarder) handleUDP(r *udp.ForwarderRequest) {
+func (f *Forwarder) handleUDP(r *udp.ForwarderRequest) bool {
 	id := r.ID()
 	if id.LocalPort != 53 {
-		return
+		return false
 	}
 
 	var wq waiter.Queue
 	ep, err := r.CreateEndpoint(&wq)
 	if err != nil {
-		return
+		return false
 	}
-	local := gonet.NewUDPConn(f.stack, &wq, ep)
+	local := gonet.NewUDPConn(&wq, ep)
 	dst := net.JoinHostPort(id.LocalAddress.String(), "53")
 
 	go f.serveDNSOverTCP(local, dst)
+	return true
 }
 
 func (f *Forwarder) serveDNSOverTCP(local *gonet.UDPConn, dst string) {
@@ -239,7 +247,7 @@ func (f *Forwarder) serveDNSOverTCP(local *gonet.UDPConn, dst string) {
 }
 
 func (f *Forwarder) resolveOverSSH(dst string, query []byte) ([]byte, error) {
-	conn, err := f.client.Dial("tcp", dst)
+	conn, err := f.dialer.Dial("tcp", dst)
 	if err != nil {
 		return nil, err
 	}
